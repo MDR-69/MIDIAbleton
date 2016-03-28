@@ -1,13 +1,16 @@
 import themidibus.*;         //Import MIDI library
 
-final String MIDI_BUS_CONFIGURATION_GUITAR_WING   = "Livid Guitar Wing";
-final String MIDI_BUS_CONFIGURATION_ABLETON_IN    = "Bus 2";
-final String MIDI_BUS_CONFIGURATION_ABLETON_OUT   = "Bus 3";
+final String MIDI_BUS_CONFIGURATION_GUITAR_WING         = "Livid Guitar Wing";
+final String MIDI_BUS_CONFIGURATION_ABLETON_IN          = "Bus 2";
+final String MIDI_BUS_CONFIGURATION_ABLETON_OUT         = "Bus 3";
+final String MIDI_BUS_CONFIGURATION_AUDIO_INTERFACE_OUT = "Fast Track Ultra 8R";
 
-final int CHANNEL_PADS               = 2;
+final int PROGRAM_CHANGE_STATUS_BYTE = 0xC0;
 
 //Channel which Ableton will listen to in order to set the voice plugins - note that this channel is also used to set some guitar FX
 final int CHANNEL_ABLETON_VOICEFX    = 5;
+final int CHANNEL_AMP                = 3;        //For reference, the VoiceLive listens on Channel 2
+
 
 //Pitches for messages coming from the Guitar Wing
 final int PITCH_WING_BIG_ROUND_BUTTON_1 = 36;
@@ -29,14 +32,23 @@ final int CC_SMALL_FADER_1              = 1;
 final int CC_SMALL_FADER_2              = 2;
 final int CC_BIG_FADER                  = 3;
 
+final int ABLETON_VOICE_FX_CTRL_CHANNEL = 0;
+final int ABLETON_GTR_CTRL_CHANNEL      = 1;
+
 //Instanciate MIDI control object
 MidiBus midiBus_GuitarWing;
 MidiBus midiBus_Ableton;
+MidiBus midiBus_AudioInterface;
+
+int currentAmpPreset = -1;
 
 void setup() {
   //Initialize MIDI Control object
   midiInit();
   size(1,1);
+  
+  //Security: force a set of parameters in Ableton to a set value
+  midiBus_Ableton.sendControllerChange(15, 127, 127);    //Force RMX500 plugin's Auto parameter to 1.00
 }
 
 void draw() {
@@ -49,7 +61,7 @@ void midiInit() {
   //Arguments to create the MidiBus : Parent Class, IN device, OUT device
   midiBus_GuitarWing = new MidiBus(this, MIDI_BUS_CONFIGURATION_GUITAR_WING, MIDI_BUS_CONFIGURATION_ABLETON_OUT);      //MIDI coming from the Wing
   midiBus_Ableton = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN, MIDI_BUS_CONFIGURATION_ABLETON_OUT);          //MIDI coming from Ableton, routed back to Ableton
-  
+  midiBus_AudioInterface = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN, MIDI_BUS_CONFIGURATION_AUDIO_INTERFACE_OUT);   //MIDI coming from Ableton, sent to external equipments
 }
 
 
@@ -58,10 +70,27 @@ void midiInit() {
 /////////////////////////////////////////////////
 
 void noteOn(int channel, int pitch, int velocity, long timestamp, String bus_name) {
+  println("what is this ?");
   // Receive a noteOn
   if (bus_name == midiBus_Ableton.getBusName()) {
-    // Convert the incoming note on in a CC On message : same "pitch" (channel number), 127 intensity, voice fx channel 
-    midiBus_Ableton.sendControllerChange(CHANNEL_ABLETON_VOICEFX, pitch, 127);
+    if (channel == ABLETON_VOICE_FX_CTRL_CHANNEL) {      // Commands to send back to Ableton in order to control Ableton FX 
+      // Convert the incoming note on in a CC On message : same "pitch" (channel number), 127 intensity, voice fx channel      
+      if (channel == 0 && pitch == 35) {
+        // Special action: disable the RMX Spiral
+        midiBus_Ableton.sendControllerChange(0, 20, 0);
+      }
+      else {
+        midiBus_Ableton.sendControllerChange(CHANNEL_ABLETON_VOICEFX, pitch, velocity);
+      }
+    }
+    else if (channel == ABLETON_GTR_CTRL_CHANNEL) {        // Commands to send directly on the audio interface's MIDI out - for example, Program Changes for the Marshall amplifier
+      if (pitch != currentAmpPreset) {
+        midiBus_AudioInterface.sendMessage(PROGRAM_CHANGE_STATUS_BYTE, CHANNEL_AMP, pitch - 1, 0);
+        println("change !");
+      }
+      currentAmpPreset = pitch;
+      println("currentAmpPreset : " + currentAmpPreset);
+    }
   }
   
   //Guitar Wing
