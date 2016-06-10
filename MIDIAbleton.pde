@@ -1,7 +1,9 @@
 import themidibus.*;         //Import MIDI library
 
+final String MIDI_BUS_CONFIGURATION_EMERGENCY_CONTROL   = "Bus 1";
 final String MIDI_BUS_CONFIGURATION_GUITAR_WING         = "Livid Guitar Wing";
-final String MIDI_BUS_CONFIGURATION_ABLETON_IN          = "Bus 2";
+final String MIDI_BUS_CONFIGURATION_ABLETON_IN_VOICEFX  = "Bus 2";
+final String MIDI_BUS_CONFIGURATION_ABLETON_IN_GTR      = "Bus 5 - GTR";
 final String MIDI_BUS_CONFIGURATION_ABLETON_OUT         = "Bus 3";
 final String MIDI_BUS_CONFIGURATION_AUDIO_INTERFACE_OUT = "Fast Track Ultra 8R";
 
@@ -39,6 +41,7 @@ final int ABLETON_GTR_CTRL_CHANNEL      = 1;
 MidiBus midiBus_GuitarWing;
 MidiBus midiBus_Ableton;
 MidiBus midiBus_AudioInterface;
+MidiBus midiBus_GuitarCmdFromAbleton;
 
 int currentAmpPreset = -1;
 
@@ -59,9 +62,11 @@ void midiInit() {
   
   MidiBus.list(); 
   //Arguments to create the MidiBus : Parent Class, IN device, OUT device
-  midiBus_GuitarWing = new MidiBus(this, MIDI_BUS_CONFIGURATION_GUITAR_WING, MIDI_BUS_CONFIGURATION_ABLETON_OUT);      //MIDI coming from the Wing
-  midiBus_Ableton = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN, MIDI_BUS_CONFIGURATION_ABLETON_OUT);          //MIDI coming from Ableton, routed back to Ableton
-  midiBus_AudioInterface = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN, MIDI_BUS_CONFIGURATION_AUDIO_INTERFACE_OUT);   //MIDI coming from Ableton, sent to external equipments
+  midiBus_GuitarWing            = new MidiBus(this, MIDI_BUS_CONFIGURATION_GUITAR_WING, MIDI_BUS_CONFIGURATION_ABLETON_OUT);                  //MIDI coming from the Wing
+  midiBus_Ableton               = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN_VOICEFX, MIDI_BUS_CONFIGURATION_ABLETON_OUT);           //MIDI coming from Ableton, routed back to Ableton
+  midiBus_GuitarCmdFromAbleton  = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN_GTR, MIDI_BUS_CONFIGURATION_AUDIO_INTERFACE_OUT);       //MIDI Program changes for the Kemper coming from Ableton 
+  midiBus_AudioInterface        = new MidiBus(this, MIDI_BUS_CONFIGURATION_ABLETON_IN_VOICEFX, MIDI_BUS_CONFIGURATION_AUDIO_INTERFACE_OUT);   //Output bus - MIDI coming from Ableton, sent to external equipments (Guitar amp, VoiceLive)
+  
 }
 
 
@@ -70,7 +75,9 @@ void midiInit() {
 /////////////////////////////////////////////////
 
 void noteOn(int channel, int pitch, int velocity, long timestamp, String bus_name) {
-  println("what is this ?");
+  
+  println("note on: " + bus_name);
+  
   // Receive a noteOn
   if (bus_name == midiBus_Ableton.getBusName()) {
     if (channel == ABLETON_VOICE_FX_CTRL_CHANNEL) {      // Commands to send back to Ableton in order to control Ableton FX 
@@ -82,14 +89,6 @@ void noteOn(int channel, int pitch, int velocity, long timestamp, String bus_nam
       else {
         midiBus_Ableton.sendControllerChange(CHANNEL_ABLETON_VOICEFX, pitch, velocity);
       }
-    }
-    else if (channel == ABLETON_GTR_CTRL_CHANNEL) {        // Commands to send directly on the audio interface's MIDI out - for example, Program Changes for the Marshall amplifier
-      if (pitch != currentAmpPreset) {
-        midiBus_AudioInterface.sendMessage(PROGRAM_CHANGE_STATUS_BYTE, CHANNEL_AMP, pitch - 1, 0);
-        println("change !");
-      }
-      currentAmpPreset = pitch;
-      println("currentAmpPreset : " + currentAmpPreset);
     }
   }
   
@@ -107,6 +106,16 @@ void noteOn(int channel, int pitch, int velocity, long timestamp, String bus_nam
       case PITCH_TOGGLE:                  sendMidiOut_On_GuitarWing_Toggle();break;
       default: break;
     }
+  }
+  
+  else if (bus_name == midiBus_GuitarCmdFromAbleton.getBusName()) {
+    // Commands to send directly on the audio interface's MIDI out - for example, Program Changes for the Marshall amplifier
+    if (pitch != currentAmpPreset) {
+      midiBus_AudioInterface.sendMessage(PROGRAM_CHANGE_STATUS_BYTE, CHANNEL_AMP, pitch - 1, 0);
+      println("change !");
+    }
+    currentAmpPreset = pitch;
+    println("currentAmpPreset : " + currentAmpPreset);
   }
 }
 
@@ -241,4 +250,3 @@ void sendMidiOut_Off_GuitarWing_Toggle() {
 void sendMidiOut_CC_BigFader(int value) {
   midiBus_GuitarWing.sendControllerChange(0, 56, int(map(value,0,127,0,100)));
 }
-
